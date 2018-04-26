@@ -17,13 +17,9 @@ Please have a look on the project website:
 http://microengineer.eu/2018/04/25/iota-pearl-diver-fpga/
 
 
-So, the prototype is done but there is much work to do.
-
-I'm going to develop an extension PCB which fits perfectly on top of a Raspi - I think, I'll need 8 weeks from now (=mid June'18).
-
 All hardware and software will become open-source.
 
-If you think, the project is worth supporting, please consider to leave me a tip at:
+If you think, the project is worth supporting, please consider to leave me a donation at:
 
 LLEYMHRKXWSPMGCMZFPKKTHSEMYJTNAZXSAYZGQUEXLXEEWPXUNWBFDWESOJVLHQHXOPQEYXGIRBYTLRWHMJAOSHUY
 

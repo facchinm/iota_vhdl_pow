@@ -125,7 +125,7 @@ signal spi_mosi : std_logic;
 signal spi_miso : std_logic;
 signal spi_sck : std_logic;
 signal spi_ss : std_logic;
-
+signal pll_slow : std_logic;
 component spi_slave
 	port
 	(
@@ -150,6 +150,7 @@ component pll
 		areset		: IN STD_LOGIC  := '0';
 		inclk0		: IN STD_LOGIC  := '0';
 		c0		: OUT STD_LOGIC ;
+		c1 : out std_logic;
 		locked		: OUT STD_LOGIC 
 	);
 end component;
@@ -158,6 +159,7 @@ component curl
 	port
 	(
 		clk : in std_logic;
+		clk_slow : in std_logic;
 		reset : in std_logic;
 		
 		spi_data_rx : in std_logic_vector(31 downto 0);
@@ -175,11 +177,13 @@ begin
 		areset => pll_reset,
 		inclk0 => CLOCK_50,
 		c0 => pll_clk,
+		c1	=> pll_slow,
 		locked => pll_locked
 	);
 	
+	
 	spi0 : spi_slave port map (
-		clk => pll_clk,
+		clk => pll_slow,
 		reset => reset,
 		
 		mosi => spi_mosi,
@@ -195,6 +199,7 @@ begin
 	curl0 : curl port map (
 		clk => pll_clk,
 		reset => reset,
+		clk_slow => pll_slow,
 		
 		spi_data_rx => spi_data_rx,
 		spi_data_tx => spi_data_tx,

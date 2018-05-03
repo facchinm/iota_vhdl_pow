@@ -126,6 +126,8 @@ begin
 							spi_data_tx(31 downto PARALLEL) <= (others => '0');
 						when "010101" => -- loop back read test inverted bits
 							spi_data_tx <= not spi_data_rx;
+						when "000110" => -- read back parallel-level
+							spi_data_tx <= std_logic_vector(to_unsigned(PARALLEL, spi_data_tx'length));
 						when others =>
 							spi_data_tx <= (others => '1');
 					end case; 			

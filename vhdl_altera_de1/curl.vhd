@@ -53,9 +53,11 @@ architecture behv of curl is
 
 subtype state_vector_type is std_logic_vector(PARALLEL-1 downto 0);
 subtype mid_state_vector_type is std_logic_vector(DATA_WIDTH-1 downto 0);
+subtype min_weight_magnitude_type is std_logic_vector(BITS_MIN_WEIGHT_MAGINUTE_MAX-1 downto 0);
 
 type curl_state_array is array(integer range <>) of state_vector_type;
 type mid_state_array is array(integer range <>) of mid_state_vector_type;
+type min_weight_magnitude_array is array(integer range<>) of min_weight_magnitude_type;
 
 signal curl_state_low : curl_state_array(STATE_LENGTH-1 downto 0);
 signal curl_state_high : curl_state_array(STATE_LENGTH-1 downto 0);
@@ -71,8 +73,7 @@ signal flag_start : std_logic := '0';
 
 signal binary_nonce : unsigned(INTERN_NONCE_LENGTH-1 downto 0);	
 signal mask : state_vector_type;
-signal min_weight_magnitude : std_logic_vector(BITS_MIN_WEIGHT_MAGINUTE_MAX-1 downto 0);
-
+signal min_weight_magnitude : min_weight_magnitude_type;
 
 begin
 	overflow <= flag_overflow;
@@ -86,9 +87,9 @@ begin
 	begin
 		if rising_edge(clk_slow) then
 			if reset='1' then
---				binary_nonce <= (others => '0');
 				min_weight_magnitude <= (others => '0');
 				flag_start <= '0';
+				spi_data_tx <= (others => '0');
 			else
 				flag_start <= '0';
 -- new spi data received
@@ -110,8 +111,7 @@ begin
 							min_weight_magnitude <= spi_data_rx(BITS_MIN_WEIGHT_MAGINUTE_MAX-1 downto 0);
 
 						when "000001" =>	-- read flags
-							spi_data_tx <= "00000000000000000000000000000" & flag_overflow & flag_found & flag_running;
-  
+							spi_data_tx(2 downto 0) <= flag_overflow & flag_found & flag_running;
 -- this costs an extreme amount of resources
 -- interesting only for debugging 
 --						when "000010" =>
@@ -119,15 +119,13 @@ begin
 --							spi_data_tx(0+PARALLEL-1 downto 0) <= curl_state_low(to_integer(unsigned(spi_addr)));
 --							spi_data_tx(8+PARALLEL-1 downto 8) <= curl_state_high(to_integer(unsigned(spi_addr)));
 						when "000011" => -- read nonce
-							spi_data_tx(31 downto INTERN_NONCE_LENGTH) <= (others => '0');
 							spi_data_tx(INTERN_NONCE_LENGTH-1 downto 0) <= std_logic_vector(binary_nonce);
 						when "000100" => -- read mask
 							spi_data_tx(PARALLEL-1 downto 0) <= mask;
-							spi_data_tx(31 downto PARALLEL) <= (others => '0');
-						when "000110" => -- read back parallel-level
-							spi_data_tx <= std_logic_vector(to_unsigned(PARALLEL, spi_data_tx'length));
 						when "010101" => -- loop back read test inverted bits
 							spi_data_tx <= not spi_data_rx;
+						when "000110" => -- read back parallel-level
+							spi_data_tx(3 downto 0) <= std_logic_vector(to_unsigned(PARALLEL, 4));
 						when others =>
 							spi_data_tx <= (others => '1');
 					end case; 			
@@ -142,7 +140,9 @@ begin
 
 		variable imask : state_vector_type;
 		
-		variable i_min_weight_magnitude : std_logic_vector(BITS_MIN_WEIGHT_MAGINUTE_MAX-1 downto 0);
+		variable i_min_weight_magnitude : min_weight_magnitude_type;
+		variable tmp_weight_magnitude : min_weight_magnitude_array(0 to PARALLEL-1);
+		variable i_binary_nonce : unsigned(INTERN_NONCE_LENGTH-1 downto 0);	
 
 		-- temporary registers get optimized away
 		variable alpha : curl_state_array(STATE_LENGTH-1 downto 0);
@@ -161,24 +161,25 @@ begin
 				flag_running <= '0';
 				flag_overflow <= '0';
 				binary_nonce <= (others => '0');
+				mask <= (others => '0');
 			else
 				case state is
 					when 0 =>
+						mask <= imask;
+						binary_nonce <= i_binary_nonce;
 						flag_running <= '0';
 						if flag_start = '1' then
+							i_binary_nonce := x"00000000";
 							i_min_weight_magnitude := min_weight_magnitude;
 							state := 1;
 						end if;
 						-- nop until start from spi
 					when 1 =>
-						binary_nonce <= (others => '0');
 						flag_found <= '0';
 						flag_running <= '1';
 						flag_overflow <= '0';
 						state := 8;
 					when 8 =>	-- copy mid state and insert nonce
-						-- pipeline adder for speed
-						binary_nonce <= binary_nonce + 1;
 						
 						-- copy and fully expand mid-state to curl-state
 						for I in 0 to (STATE_LENGTH/DATA_WIDTH)-1 loop
@@ -231,7 +232,7 @@ begin
 						-- Doesn't bring the exact same result like reference implementation with real
 						-- trinary adder - but it doesn't matter and it is way faster.
 						for I in 164 to 164+INTERN_NONCE_LENGTH-1 loop
-							if binary_nonce(I-164) = '1' then
+							if i_binary_nonce(I-164) = '1' then
 								curl_state_low(I) <= (others => '1');
 								curl_state_high(I) <= (others => '0');
 							else
@@ -251,6 +252,9 @@ begin
 						
 						state := 10;
 					when 10 =>	-- do the curl hash round without any copying needed
+						if round = 1 then
+							state := 16;
+						end if;
 						for I in 0 to STATE_LENGTH-1 loop
 							alpha(I) := curl_state_low(index_table(I));
 							beta(I) := curl_state_high(index_table(I));
@@ -261,46 +265,37 @@ begin
 							curl_state_low(I) <= not delta(I);
 							curl_state_high(I) <= (alpha(I) xor gamma(I)) or delta(I);
 						end loop;
-
 						round := round - 1;
-						if round = 0 then
-							state := 16;
-						end if;						
 					when 16 =>  -- find out which solution - if any
-						imask := (others => '1');
-						
-						-- doesn't work like the 2nd variant ... why? TODO^^ 
+						imask := (others => '0');
+	
+						-- transform "vertical" trits to "horizontal" bits
+						-- and compare with min weight magnitude mask
 						for I in 0 to PARALLEL-1 loop
+							tmp_weight_magnitude(I) := (others => '0');
 							for J in 0 to BITS_MIN_WEIGHT_MAGINUTE_MAX-1 loop
-								if i_min_weight_magnitude(J) = '1' and (curl_state_low(HASH_LENGTH - 1 - J)(I) /= '1' or curl_state_high(HASH_LENGTH - 1 - J)(I) /= '1') then
-									imask(I) := '0';
-								end if;
+								tmp_weight_magnitude(I)(J) := curl_state_low(HASH_LENGTH - 1 - J)(I) and curl_state_high(HASH_LENGTH - 1 - J)(I);
 							end loop;
+							tmp_weight_magnitude(I) := tmp_weight_magnitude(I) and i_min_weight_magnitude; -- only consider used bits
+							if tmp_weight_magnitude(I) = i_min_weight_magnitude then
+								imask(I) := '1';
+							end if;
 						end loop;
-						
---						imask := (others => '1');
---						for I in 0 to BITS_MIN_WEIGHT_MAGINUTE_MAX-1 loop 
---							if i_min_weight_magnitude(I) = '1' then
---								imask := imask and not (curl_state_low(HASH_LENGTH - 1 - I) xor curl_state_high(HASH_LENGTH - 1 - I));
---							end if;
---						end loop;
---						mask <= imask;						
-
-						-- no solution found?
-						if unsigned(imask) = 0 then
-							-- is overflow?
-							if binary_nonce = x"ffffffff" then
-								flag_overflow <= '1';
-								state := 0;
-							else
-								state := 8;	-- and try again
-							end if;										
+						state := 17;
+					when 17 =>
+						if unsigned(imask) /= 0 then
+							state := 30;
+						elsif i_binary_nonce = x"ffffffff" then
+							state := 31;
 						else
-							state := 30;	-- nonce found
+							i_binary_nonce := i_binary_nonce + 1;
+							state := 8;
 						end if;
 					when 30 =>
-						mask <= imask;
 						flag_found <= '1';
+						state := 0;
+					when 31 =>
+						flag_overflow <= '1';
 						state := 0;
 					when others =>
 						state := 0;

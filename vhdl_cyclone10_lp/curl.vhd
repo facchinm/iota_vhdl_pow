@@ -98,14 +98,12 @@ begin
 					case spi_cmd is
 						when "000000" => -- nop
 						when "100001" => -- start / stop
-							if spi_data_rx(0) = '1' then
-								flag_start <= '1';
-							end if;
+							flag_start <= spi_data_rx(0);
 						when "100101" =>	-- write to wr address
 							wraddr := 0;
 						when "100010" =>	-- write to mid state
-							curl_mid_state_low(wraddr) <= std_logic_vector(spi_data_rx(DATA_WIDTH-1 downto 0));
-							curl_mid_state_high(wraddr) <= std_logic_vector(spi_data_rx(DATA_WIDTH+8 downto DATA_WIDTH));
+							curl_mid_state_low(wraddr) <= spi_data_rx(DATA_WIDTH-1 downto 0);
+							curl_mid_state_high(wraddr) <= spi_data_rx(DATA_WIDTH+8 downto DATA_WIDTH);
 							wraddr := wraddr + 1;
 						when "100100" =>
 							min_weight_magnitude <= spi_data_rx(BITS_MIN_WEIGHT_MAGINUTE_MAX-1 downto 0);
@@ -118,6 +116,10 @@ begin
 --							spi_addr := spi_data_rx(25 downto 16);
 --							spi_data_tx(0+PARALLEL-1 downto 0) <= curl_state_low(to_integer(unsigned(spi_addr)));
 --							spi_data_tx(8+PARALLEL-1 downto 8) <= curl_state_high(to_integer(unsigned(spi_addr)));
+						when "000111" =>
+							spi_data_tx(DATA_WIDTH-1 downto 0) <= curl_mid_state_low(wraddr);
+							spi_data_tx(DATA_WIDTH+8 downto DATA_WIDTH) <= curl_mid_state_high(wraddr);
+							wraddr := wraddr + 1;	-- dual-used for debugging purposes 
 						when "000011" => -- read nonce
 							spi_data_tx(INTERN_NONCE_LENGTH-1 downto 0) <= std_logic_vector(binary_nonce);
 						when "000100" => -- read mask

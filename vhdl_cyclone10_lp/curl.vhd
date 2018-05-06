@@ -27,7 +27,7 @@ entity curl is
 		STATE_LENGTH : integer := 729; -- 3 * HASH_LENGTH;
 		NONCE_LENGTH : integer := 81; -- HASH_LENGTH / 3;
 		NUMBER_OF_ROUNDS : integer := 81;
-		PARALLEL : integer := 7;
+		PARALLEL : integer := 5;
 		INTERN_NONCE_LENGTH : integer	:= 32;
 		BITS_MIN_WEIGHT_MAGINUTE_MAX : integer := 26;
 		DATA_WIDTH : integer := 9
@@ -83,13 +83,16 @@ begin
 	process (clk_slow)
 	-- because it looks prettier
 		variable spi_cmd : std_logic_vector(5 downto 0);
-		variable wraddr : integer range 0 to 127 := 0;
+		variable wraddr : unsigned(7 downto 0) := x"00";
 	begin
 		if rising_edge(clk_slow) then
 			if reset='1' then
 				min_weight_magnitude <= (others => '0');
 				flag_start <= '0';
 				spi_data_tx <= (others => '0');
+--				curl_mid_state_low <= (others => (others => '0'));
+--				curl_mid_state_high <= (others => (others => '0'));
+				wraddr := x"00";
 			else
 				flag_start <= '0';
 -- new spi data received
@@ -100,10 +103,13 @@ begin
 						when "100001" => -- start / stop
 							flag_start <= spi_data_rx(0);
 						when "100101" =>	-- write to wr address
-							wraddr := 0;
+							wraddr := unsigned(spi_data_rx(7 downto 0));
 						when "100010" =>	-- write to mid state
-							curl_mid_state_low(wraddr) <= spi_data_rx(DATA_WIDTH-1 downto 0);
-							curl_mid_state_high(wraddr) <= spi_data_rx(DATA_WIDTH+8 downto DATA_WIDTH);
+							if (wraddr <= (STATE_LENGTH/9)-1) then
+								curl_mid_state_low(to_integer(wraddr)) <= spi_data_rx(DATA_WIDTH-1 downto 0);
+								curl_mid_state_high(to_integer(wraddr)) <= spi_data_rx(DATA_WIDTH+8 downto DATA_WIDTH);
+							end if;
+							spi_data_tx <= spi_data_rx;
 							wraddr := wraddr + 1;
 						when "100100" =>
 							min_weight_magnitude <= spi_data_rx(BITS_MIN_WEIGHT_MAGINUTE_MAX-1 downto 0);
@@ -117,8 +123,12 @@ begin
 --							spi_data_tx(0+PARALLEL-1 downto 0) <= curl_state_low(to_integer(unsigned(spi_addr)));
 --							spi_data_tx(8+PARALLEL-1 downto 8) <= curl_state_high(to_integer(unsigned(spi_addr)));
 						when "000111" =>
-							spi_data_tx(DATA_WIDTH-1 downto 0) <= curl_mid_state_low(wraddr);
-							spi_data_tx(DATA_WIDTH+8 downto DATA_WIDTH) <= curl_mid_state_high(wraddr);
+							if (wraddr <= (STATE_LENGTH/9)-1) then
+								spi_data_tx(DATA_WIDTH-1 downto 0) <= curl_mid_state_low(to_integer(wraddr));
+								spi_data_tx(DATA_WIDTH+8 downto DATA_WIDTH) <= curl_mid_state_high(to_integer(wraddr));
+							else
+								spi_data_tx <= (others => '0');
+							end if;
 							wraddr := wraddr + 1;	-- dual-used for debugging purposes 
 						when "000011" => -- read nonce
 							spi_data_tx(INTERN_NONCE_LENGTH-1 downto 0) <= std_logic_vector(binary_nonce);
@@ -151,7 +161,6 @@ begin
 		variable beta : curl_state_array(STATE_LENGTH-1 downto 0);
 		variable gamma : curl_state_array(STATE_LENGTH-1 downto 0);
 		variable delta : curl_state_array(STATE_LENGTH-1 downto 0);
-		variable epsilon : curl_state_array(STATE_LENGTH-1 downto 0);
 		
 		variable tmp_index : integer range 0 to 1023;
 		variable tmp_mod : integer range 0 to 31;
@@ -159,11 +168,24 @@ begin
 		if rising_edge(clk) then
 			if reset='1' then
 				state := 0;
+				round := 0;
 				flag_found <= '0';
 				flag_running <= '0';
 				flag_overflow <= '0';
 				binary_nonce <= (others => '0');
 				mask <= (others => '0');
+--				curl_state_low <= (others => (others => '0'));
+--				curl_state_high <= (others => (others => '0'));
+--				tmp_weight_magnitude := (others => (others => '0'));
+				i_binary_nonce := (others => '0');
+				imask := (others => '0');
+				i_min_weight_magnitude := (others => '0');
+				alpha := (others => (others => '0'));
+				beta := (others => (others => '0'));
+				gamma := (others => (others => '0'));
+				delta := (others => (others => '0'));
+				tmp_index := 0;
+				tmp_mod := 0;
 			else
 				case state is
 					when 0 =>

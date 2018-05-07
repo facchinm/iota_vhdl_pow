@@ -30,7 +30,8 @@ entity curl is
 		PARALLEL : integer := 5;
 		INTERN_NONCE_LENGTH : integer	:= 32;
 		BITS_MIN_WEIGHT_MAGINUTE_MAX : integer := 26;
-		DATA_WIDTH : integer := 9
+		DATA_WIDTH : integer := 9;
+		NONCE_OFFSET : integer := 162	-- we hope it nevery changes
 	);
 
 	port
@@ -75,6 +76,16 @@ signal binary_nonce : unsigned(INTERN_NONCE_LENGTH-1 downto 0);
 signal mask : state_vector_type;
 signal min_weight_magnitude : min_weight_magnitude_type;
 
+function expand(b : std_logic) 
+	return state_vector_type is
+begin
+	if b = '1' then
+		return (others => '1');
+	else
+		return (others => '0');
+	end if;
+end expand;
+	
 begin
 	overflow <= flag_overflow;
 	running <= flag_running;
@@ -83,7 +94,7 @@ begin
 	process (clk_slow)
 	-- because it looks prettier
 		variable spi_cmd : std_logic_vector(5 downto 0);
-		variable wraddr : unsigned(7 downto 0) := x"00";
+		variable addrptr : unsigned(7 downto 0) := x"00";
 	begin
 		if rising_edge(clk_slow) then
 			if reset='1' then
@@ -92,25 +103,25 @@ begin
 				spi_data_tx <= (others => '0');
 --				curl_mid_state_low <= (others => (others => '0'));
 --				curl_mid_state_high <= (others => (others => '0'));
-				wraddr := x"00";
+				addrptr := x"00";
 			else
 				flag_start <= '0';
 -- new spi data received
 				if spi_data_rxen = '1' then
 					spi_cmd := spi_data_rx(31 downto 26);
 					case spi_cmd is
-						when "000000" => -- nop
+						when "000000" => -- nop (mainly for reading back data)
 						when "100001" => -- start / stop
 							flag_start <= spi_data_rx(0);
 						when "100101" =>	-- write to wr address
-							wraddr := unsigned(spi_data_rx(7 downto 0));
+							addrptr := unsigned(spi_data_rx(7 downto 0));
 						when "100010" =>	-- write to mid state
-							if (wraddr <= (STATE_LENGTH/9)-1) then
-								curl_mid_state_low(to_integer(wraddr)) <= spi_data_rx(DATA_WIDTH-1 downto 0);
-								curl_mid_state_high(to_integer(wraddr)) <= spi_data_rx(DATA_WIDTH+8 downto DATA_WIDTH);
+							if (addrptr <= (STATE_LENGTH/9)-1) then
+								curl_mid_state_low(to_integer(addrptr)) <= spi_data_rx(DATA_WIDTH-1 downto 0);
+								curl_mid_state_high(to_integer(addrptr)) <= spi_data_rx(DATA_WIDTH+8 downto DATA_WIDTH);
 							end if;
 							spi_data_tx <= spi_data_rx;
-							wraddr := wraddr + 1;
+							addrptr := addrptr + 1;
 						when "100100" =>
 							min_weight_magnitude <= spi_data_rx(BITS_MIN_WEIGHT_MAGINUTE_MAX-1 downto 0);
 
@@ -125,13 +136,13 @@ begin
 
 -- for debugging only ... read back mid_state
 --						when "000111" =>
---							if (wraddr <= (STATE_LENGTH/9)-1) then
---								spi_data_tx(DATA_WIDTH-1 downto 0) <= curl_mid_state_low(to_integer(wraddr));
---								spi_data_tx(DATA_WIDTH+8 downto DATA_WIDTH) <= curl_mid_state_high(to_integer(wraddr));
+--							if (addrptr <= (STATE_LENGTH/9)-1) then
+--								spi_data_tx(DATA_WIDTH-1 downto 0) <= curl_mid_state_low(to_integer(addrptr));
+--								spi_data_tx(DATA_WIDTH+8 downto DATA_WIDTH) <= curl_mid_state_high(to_integer(addrptr));
 --							else
 --								spi_data_tx <= (others => '0');
 --							end if;
---							wraddr := wraddr + 1;	-- dual-used for debugging purposes 
+--							addrptr := addrptr + 1;	-- dual-used for debugging purposes 
 						when "000011" => -- read nonce
 							spi_data_tx(INTERN_NONCE_LENGTH-1 downto 0) <= std_logic_vector(binary_nonce);
 						when "000100" => -- read mask
@@ -147,6 +158,8 @@ begin
 			end if; 
 		end if;
 	end process;
+	
+
 	
 	process (clk)
 		variable	state : integer range 0 to 31 := 0;
@@ -165,7 +178,7 @@ begin
 		variable delta : curl_state_array(STATE_LENGTH-1 downto 0);
 		
 		variable tmp_index : integer range 0 to 1023;
-		variable tmp_mod : integer range 0 to 31;
+		variable tmp_highest_bit : integer range 0 to 31;
 	begin
 		if rising_edge(clk) then
 			if reset='1' then
@@ -187,7 +200,6 @@ begin
 				gamma := (others => (others => '0'));
 				delta := (others => (others => '0'));
 				tmp_index := 0;
-				tmp_mod := 0;
 			else
 				case state is
 					when 0 =>
@@ -211,67 +223,47 @@ begin
 						for I in 0 to (STATE_LENGTH/DATA_WIDTH)-1 loop
 							for J in 0 to DATA_WIDTH-1 loop
 								tmp_index := I*DATA_WIDTH+J;
-								if  tmp_index < 162 or tmp_index > HASH_LENGTH-1 then
-									if curl_mid_state_low(I)(J) = '1' then
-										curl_state_low(tmp_index) <= (others => '1');
-									else
-										curl_state_low(tmp_index) <= (others => '0');
-									end if;
-									
-									if curl_mid_state_high(I)(J) = '1' then
-										curl_state_high(tmp_index) <= (others => '1');
-									else
-										curl_state_high(tmp_index) <= (others => '0');
-									end if;
+								if  tmp_index < NONCE_OFFSET or tmp_index > NONCE_OFFSET + NONCE_LENGTH - 1 then
+									curl_state_low(tmp_index) <= expand(curl_mid_state_low(I)(J));
+									curl_state_high(tmp_index) <= expand(curl_mid_state_high(I)(J));
 								end if;
 							end loop;
 						end loop;
    
---						-- generate bitmuster in first two trit-arrays of counter depending from PARALLEL setting
---						-- doesn't need additional resources for pow or division because everything is constant
-						for J in 0 to 1 loop	-- TODO make adjustable ... it's okay up to PARALLEL = 9
-							for I in 0 to PARALLEL-1 loop
-								tmp_mod := (I/(3**J)) mod 3;
-								if tmp_mod = 0 then
-									curl_state_low(162+J)(I) <= '1';
-									curl_state_high(162+J)(I) <= '1';
-								elsif tmp_mod = 1 then
-									curl_state_low(162+J)(I) <= '0';
-									curl_state_high(162+J)(I) <= '1';
-								elsif tmp_mod = 2 then
-									curl_state_low(162+J)(I) <= '1';
-									curl_state_high(162+J)(I) <= '0';
-								end if;
-							end loop;
+						-- fill all ... synthesizer is smart enough to optimize away what is not needed
+						for I in NONCE_OFFSET to NONCE_OFFSET + NONCE_LENGTH - 1 loop
+							curl_state_low(I) <= expand('1');
+							curl_state_high(I) <= expand('1');
 						end loop;
-
- 
-						-- lowest trits for counter from 0 to 4 (for 5bit)
---						curl_state_low(162) <=  "01101"; 
---						curl_state_high(162) <= "11011";
---						curl_state_low(163) <=  "00111";
---						curl_state_high(163) <= "11111";
 						
-						-- insert and convert binary nonce to trinary nonce
-						-- It's a fake trinary nonce but integer-values are strictly monotonously rising 
-						-- with integer values of binary nonce.
-						-- Doesn't bring the exact same result like reference implementation with real
-						-- trinary adder - but it doesn't matter and it is way faster.
-						for I in 164 to 164+INTERN_NONCE_LENGTH-1 loop
-							if i_binary_nonce(I-164) = '1' then
-								curl_state_low(I) <= (others => '1');
-								curl_state_high(I) <= (others => '0');
-							else
-								curl_state_low(I) <= (others => '0');
-								curl_state_high(I) <= (others => '1');
+						-- calculate log2(x) by determining the place of highest set bit
+						-- this is calculated on constants, so no logic needed
+						tmp_highest_bit := 0;
+						for I in 0 to 31 loop	-- 32 is enough ...^^
+							if to_unsigned(PARALLEL-1, 32)(I) = '1' then
+								tmp_highest_bit := I;
 							end if;
 						end loop;
+	
+--						-- generate bitmuster in first trit-arrays of nonce depending on PARALLEL setting
+						-- this is calculated on constants, so no logic needed
+						for I in 0 to PARALLEL-1 loop
+							for J in 0 to tmp_highest_bit loop
+								curl_state_low(NONCE_OFFSET+J)(I) <= to_unsigned(I, tmp_highest_bit+1)(J);
+								curl_state_high(NONCE_OFFSET+J)(I) <= not to_unsigned(I, tmp_highest_bit+1)(J);
+							end loop;
+						end loop;
 						
-						-- fill remaining trits with '11' (=0)
-						for I in 164+INTERN_NONCE_LENGTH to HASH_LENGTH-1 loop
-							curl_state_low(I) <= (others => '1');
-							curl_state_high(I) <= (others => '1');
-						end loop;	
+						-- insert and convert binary nonce to ternary nonce
+						-- It's a fake ternary nonce but integer-values are strictly monotonously rising 
+						-- with integer values of binary nonce.
+						-- Doesn't bring the exact same result like reference implementation with real
+						-- ternary adder - but it doesn't matter and it is way faster.
+						-- conveniently put nonce counter at the end of nonce
+						for I in 0 to INTERN_NONCE_LENGTH-1 loop
+							curl_state_low(NONCE_OFFSET + NONCE_LENGTH - INTERN_NONCE_LENGTH + I) <= expand(i_binary_nonce(I));
+							curl_state_high(NONCE_OFFSET + NONCE_LENGTH - INTERN_NONCE_LENGTH + I) <= not expand(i_binary_nonce(I));
+						end loop;
 
 						-- initialize round-counter
 						round := NUMBER_OF_ROUNDS;

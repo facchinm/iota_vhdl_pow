@@ -116,20 +116,22 @@ begin
 
 						when "000001" =>	-- read flags
 							spi_data_tx(2 downto 0) <= flag_overflow & flag_found & flag_running;
--- this costs an extreme amount of resources
--- interesting only for debugging 
+
+-- for debugging onle ... read back curl_state
 --						when "000010" =>
 --							spi_addr := spi_data_rx(25 downto 16);
 --							spi_data_tx(0+PARALLEL-1 downto 0) <= curl_state_low(to_integer(unsigned(spi_addr)));
 --							spi_data_tx(8+PARALLEL-1 downto 8) <= curl_state_high(to_integer(unsigned(spi_addr)));
-						when "000111" =>
-							if (wraddr <= (STATE_LENGTH/9)-1) then
-								spi_data_tx(DATA_WIDTH-1 downto 0) <= curl_mid_state_low(to_integer(wraddr));
-								spi_data_tx(DATA_WIDTH+8 downto DATA_WIDTH) <= curl_mid_state_high(to_integer(wraddr));
-							else
-								spi_data_tx <= (others => '0');
-							end if;
-							wraddr := wraddr + 1;	-- dual-used for debugging purposes 
+
+-- for debugging only ... read back mid_state
+--						when "000111" =>
+--							if (wraddr <= (STATE_LENGTH/9)-1) then
+--								spi_data_tx(DATA_WIDTH-1 downto 0) <= curl_mid_state_low(to_integer(wraddr));
+--								spi_data_tx(DATA_WIDTH+8 downto DATA_WIDTH) <= curl_mid_state_high(to_integer(wraddr));
+--							else
+--								spi_data_tx <= (others => '0');
+--							end if;
+--							wraddr := wraddr + 1;	-- dual-used for debugging purposes 
 						when "000011" => -- read nonce
 							spi_data_tx(INTERN_NONCE_LENGTH-1 downto 0) <= std_logic_vector(binary_nonce);
 						when "000100" => -- read mask

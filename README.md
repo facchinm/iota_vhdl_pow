@@ -6,7 +6,7 @@ In order to speed up PoW dramatically, the IOTA Pearl-Diver algorithm was ported
 
 Currently, it is running on Altera DE1 (Cyclon2 with 22kLE @ 220MHz, 85% resources used) and archives 12.8MH/s - for an arbitrary choosen transaction it took less than 500ms to find a valid nonce.
 
-This respository will not only contain VHDL source code and Altera DE1 project-files but also everything needed for a custom PCB (with a modern FPGA Cyclone 10 LP) which is plugged on top of a Raspberry Pi.
+This respository will not only contain VHDL source code and Altera DE1 project-files but also everything needed for a custom PCB (with a modern FPGA Cyclone 10 LP) which is plugged on top of a Raspberry Pi. Proto-Type is reaching 14.6MH/s :)
 
 There is a fork of dcurl here which supports the FPGA here:
 

@@ -21,6 +21,7 @@ end;
 
 architecture beh of de1 is
 
+signal nreset : std_logic;
 
 
 
@@ -82,6 +83,9 @@ component curl
 end component;
 
 begin
+	nreset <= not reset;
+
+
 	pll0 : pll port map (
 		areset => pll_reset,
 		inclk0 => CLOCK_50,
@@ -93,7 +97,7 @@ begin
 	
 	spi0 : spi_slave port map (
 		clk => pll_slow,
-		reset => reset,
+		reset => nreset,
 		
 		mosi => spi_mosi,
 		miso => spi_miso,
@@ -107,7 +111,7 @@ begin
 	
 	curl0 : curl port map (
 		clk => pll_clk,
-		reset => reset,
+		reset => nreset,
 		clk_slow => pll_slow,
 		
 		spi_data_rx => spi_data_rx,

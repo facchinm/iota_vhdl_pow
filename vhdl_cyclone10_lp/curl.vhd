@@ -72,6 +72,16 @@ signal flag_overflow : std_logic := '0';
 signal flag_found : std_logic := '0';
 signal flag_start : std_logic := '0';
 
+signal sync_flag_start : std_logic_vector(2 downto 0);
+signal sync_flag_overflow : std_logic_vector(2 downto 0);
+signal sync_flag_found : std_logic_vector(2 downto 0);
+signal sync_flag_running : std_logic_vector(2 downto 0);
+
+type binary_nonce_array is array(integer range<>) of unsigned(INTERN_NONCE_LENGTH-1 downto 0);
+signal sync_binary_nonce : binary_nonce_array(2 downto 0);
+signal sync_mask : curl_state_array(2 downto 0);
+
+
 signal binary_nonce : unsigned(INTERN_NONCE_LENGTH-1 downto 0);	
 signal mask : state_vector_type;
 signal min_weight_magnitude : min_weight_magnitude_type;
@@ -87,9 +97,49 @@ begin
 end expand;
 	
 begin
-	overflow <= flag_overflow;
-	running <= flag_running;
-	found <= flag_found;
+	overflow <= sync_flag_overflow(2);
+	running <= sync_flag_running(2);
+	found <= sync_flag_found(2);
+	
+	-- synchronize across clock domains
+	process(clk_slow)
+	begin
+		if rising_edge(clk_slow) then
+			if reset='1' then
+				sync_flag_overflow <= (others => '0');
+				sync_flag_running <= (others => '0');
+				sync_flag_found <= (others => '0');
+				sync_binary_nonce <= (others => (others => '0'));
+				sync_mask <= (others => (others => '0'));
+			else
+				sync_flag_overflow <= sync_flag_overflow(1 downto 0) & flag_overflow;
+				sync_flag_running <= sync_flag_running(1 downto 0) & flag_running;
+				sync_flag_found <= sync_flag_found(1 downto 0) & flag_found;
+				
+				sync_binary_nonce(0) <= binary_nonce;
+				sync_binary_nonce(1) <= sync_binary_nonce(0);
+				sync_binary_nonce(2) <= sync_binary_nonce(1);
+
+				sync_mask(0) <= mask;
+				sync_mask(1) <= sync_mask(0);
+				sync_mask(2) <= sync_mask(1);
+			end if;
+		end if;
+	end process;
+
+	-- synchronize across clock domains
+	process(clk)
+	begin
+		if rising_edge(clk) then
+			if reset='1' then
+				sync_flag_start <= (others => '0');
+			else
+				sync_flag_start <= sync_flag_start(1 downto 0) & flag_start;
+			end if;
+		end if;
+	end process;
+	
+	
 	
 	process (clk_slow)
 	-- because it looks prettier
@@ -126,7 +176,7 @@ begin
 							min_weight_magnitude <= spi_data_rx(BITS_MIN_WEIGHT_MAGINUTE_MAX-1 downto 0);
 
 						when "000001" =>	-- read flags
-							spi_data_tx(2 downto 0) <= flag_overflow & flag_found & flag_running;
+							spi_data_tx(2 downto 0) <= sync_flag_overflow(2) & sync_flag_found(2) & sync_flag_running(2);
 
 -- for debugging onle ... read back curl_state
 --						when "000010" =>
@@ -144,9 +194,9 @@ begin
 --							end if;
 --							addrptr := addrptr + 1;	-- dual-used for debugging purposes 
 						when "000011" => -- read nonce
-							spi_data_tx(INTERN_NONCE_LENGTH-1 downto 0) <= std_logic_vector(binary_nonce);
+							spi_data_tx(INTERN_NONCE_LENGTH-1 downto 0) <= std_logic_vector(sync_binary_nonce(2));
 						when "000100" => -- read mask
-							spi_data_tx(PARALLEL-1 downto 0) <= mask;
+							spi_data_tx(PARALLEL-1 downto 0) <= sync_mask(2);
 						when "010101" => -- loop back read test inverted bits
 							spi_data_tx <= not spi_data_rx;
 						when "000110" => -- read back parallel-level
@@ -162,7 +212,7 @@ begin
 
 	
 	process (clk)
-		variable	state : integer range 0 to 31 := 0;
+		variable	state : integer range 0 to 63 := 0;
 		variable round : integer range 0 to 127 := 0;
 
 		variable imask : state_vector_type;
@@ -203,20 +253,15 @@ begin
 			else
 				case state is
 					when 0 =>
-						mask <= imask;
-						binary_nonce <= i_binary_nonce;
 						flag_running <= '0';
-						if flag_start = '1' then
+						if sync_flag_start(2) = '1' then
 							i_binary_nonce := x"00000000";
 							i_min_weight_magnitude := min_weight_magnitude;
-							state := 1;
+							flag_found <= '0';
+							flag_running <= '1';
+							flag_overflow <= '0';
+							state := 8;
 						end if;
-						-- nop until start from spi
-					when 1 =>
-						flag_found <= '0';
-						flag_running <= '1';
-						flag_overflow <= '0';
-						state := 8;
 					when 8 =>	-- copy mid state and insert nonce
 						
 						-- copy and fully expand mid-state to curl-state
@@ -310,6 +355,12 @@ begin
 							state := 8;
 						end if;
 					when 30 =>
+						state := 32;
+					when 32 =>
+						state := 33;
+					when 33 =>
+						mask <= imask;
+						binary_nonce <= i_binary_nonce;
 						flag_found <= '1';
 						state := 0;
 					when 31 =>

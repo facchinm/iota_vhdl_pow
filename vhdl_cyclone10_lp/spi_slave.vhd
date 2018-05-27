@@ -34,7 +34,8 @@ entity spi_slave is
 		
 		data_rd : in std_logic_vector(31 downto 0);
 		data_wr : out std_logic_vector(31 downto 0);
-		data_wren : out std_logic
+		data_wren : out std_logic;
+		data_strobe : in std_logic
 		
 	);
 end spi_slave;
@@ -67,9 +68,13 @@ begin
 				sync_sck <= sync_sck(0) & sck;
 				sync_ss <= sync_ss(0) & ss;
 
+				if data_strobe = '1' then
+					i_shiftregister := data_rd;
+				end if;
+				
 				case sync_ss is
 					when "11" => 
-						i_shiftregister := data_rd;
+--						i_shiftregister := data_rd;
 						cnt := 0;
 --						i_flip := '0';
 					when "10" =>
@@ -81,7 +86,7 @@ begin
 					when "00" =>
 						case sync_sck is
 							when "01" => 
-								i_shiftregister := i_shiftregister(30 downto 0) & sync_mosi(0);
+								i_shiftregister := i_shiftregister(30 downto 0) & mosi;
 								cnt := cnt + 1;
 							when "10" =>
 								miso <= i_shiftregister(31);

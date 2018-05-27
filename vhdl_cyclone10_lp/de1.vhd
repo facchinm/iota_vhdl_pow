@@ -32,7 +32,7 @@ signal pll_locked : std_logic;
 signal spi_data_tx : std_logic_vector(31 downto 0);
 signal spi_data_rx  : std_logic_vector(31 downto 0);
 signal spi_data_rx_en : std_logic;
-
+signal spi_data_strobe : std_logic;
 
 signal pll_slow : std_logic;
 
@@ -46,6 +46,7 @@ component spi_slave
 		miso : out std_logic;
 		sck : in std_logic;
 		ss : in std_logic;
+		data_strobe : in std_logic;
 		
 		
 		data_rd : in std_logic_vector(31 downto 0);
@@ -75,6 +76,7 @@ component curl
 		spi_data_rx : in std_logic_vector(31 downto 0);
 		spi_data_tx : out std_logic_vector(31 downto 0);
 		spi_data_rxen : in std_logic;
+		spi_data_strobe : out std_logic;
 
 		overflow : out std_logic;
 		running : out std_logic;
@@ -103,6 +105,7 @@ begin
 		miso => spi_miso,
 		sck => spi_sck,
 		ss => spi_ss,
+		data_strobe => spi_data_strobe,
 		
 		data_rd => spi_data_tx,
 		data_wr => spi_data_rx,
@@ -117,6 +120,7 @@ begin
 		spi_data_rx => spi_data_rx,
 		spi_data_tx => spi_data_tx,
 		spi_data_rxen => spi_data_rx_en,
+		spi_data_strobe => spi_data_strobe,
 		
 		overflow => led_overflow,
 		running => led_running,

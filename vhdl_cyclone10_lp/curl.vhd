@@ -43,6 +43,7 @@ entity curl is
 		spi_data_rx : in std_logic_vector(31 downto 0);
 		spi_data_tx : out std_logic_vector(31 downto 0);
 		spi_data_rxen : in std_logic;
+		spi_data_strobe : out std_logic;
 		overflow : out std_logic;
 		running : out std_logic;
 		found : out std_logic
@@ -63,28 +64,37 @@ type min_weight_magnitude_array is array(integer range<>) of min_weight_magnitud
 signal curl_state_low : curl_state_array(STATE_LENGTH-1 downto 0);
 signal curl_state_high : curl_state_array(STATE_LENGTH-1 downto 0);
 
--- mid state data in 9bit packed format
-signal curl_mid_state_low : mid_state_array((STATE_LENGTH/9)-1 downto 0);
-signal curl_mid_state_high : mid_state_array((STATE_LENGTH/9)-1 downto 0);
+signal data_low : mid_state_array((HASH_LENGTH/DATA_WIDTH)-1 downto 0);
+signal data_high : mid_state_array((HASH_LENGTH/DATA_WIDTH)-1 downto 0);
+
+
+signal curl_mid_state_low : std_logic_vector(STATE_LENGTH-1 downto 0);
+signal curl_mid_state_high : std_logic_vector(STATE_LENGTH-1 downto 0);
 
 signal flag_running : std_logic := '0';
 signal flag_overflow : std_logic := '0';
 signal flag_found : std_logic := '0';
 signal flag_start : std_logic := '0';
 
-signal sync_flag_start : std_logic_vector(2 downto 0);
-signal sync_flag_overflow : std_logic_vector(2 downto 0);
-signal sync_flag_found : std_logic_vector(2 downto 0);
-signal sync_flag_running : std_logic_vector(2 downto 0);
+signal flag_curl_finished : std_logic := '0';
 
 type binary_nonce_array is array(integer range<>) of unsigned(INTERN_NONCE_LENGTH-1 downto 0);
-signal sync_binary_nonce : binary_nonce_array(2 downto 0);
-signal sync_mask : curl_state_array(2 downto 0);
 
 
 signal binary_nonce : unsigned(INTERN_NONCE_LENGTH-1 downto 0);	
 signal mask : state_vector_type;
 signal min_weight_magnitude : min_weight_magnitude_type;
+
+signal i_binary_nonce : unsigned(INTERN_NONCE_LENGTH-1 downto 0);	
+signal tmp_weight_magnitude : min_weight_magnitude_array(0 to PARALLEL-1);
+
+signal flag_curl_reset : std_logic;
+signal flag_curl_write : std_logic;
+signal flag_curl_do_curl : std_logic;
+
+signal imask : state_vector_type;
+
+
 
 function expand(b : std_logic) 
 	return state_vector_type is
@@ -95,51 +105,12 @@ begin
 		return (others => '0');
 	end if;
 end expand;
-	
+
+
 begin
-	overflow <= sync_flag_overflow(2);
-	running <= sync_flag_running(2);
-	found <= sync_flag_found(2);
-	
-	-- synchronize across clock domains
-	process(clk_slow)
-	begin
-		if rising_edge(clk_slow) then
-			if reset='1' then
-				sync_flag_overflow <= (others => '0');
-				sync_flag_running <= (others => '0');
-				sync_flag_found <= (others => '0');
-				sync_binary_nonce <= (others => (others => '0'));
-				sync_mask <= (others => (others => '0'));
-			else
-				sync_flag_overflow <= sync_flag_overflow(1 downto 0) & flag_overflow;
-				sync_flag_running <= sync_flag_running(1 downto 0) & flag_running;
-				sync_flag_found <= sync_flag_found(1 downto 0) & flag_found;
-				
-				sync_binary_nonce(0) <= binary_nonce;
-				sync_binary_nonce(1) <= sync_binary_nonce(0);
-				sync_binary_nonce(2) <= sync_binary_nonce(1);
-
-				sync_mask(0) <= mask;
-				sync_mask(1) <= sync_mask(0);
-				sync_mask(2) <= sync_mask(1);
-			end if;
-		end if;
-	end process;
-
-	-- synchronize across clock domains
-	process(clk)
-	begin
-		if rising_edge(clk) then
-			if reset='1' then
-				sync_flag_start <= (others => '0');
-			else
-				sync_flag_start <= sync_flag_start(1 downto 0) & flag_start;
-			end if;
-		end if;
-	end process;
-	
-	
+	overflow <= flag_overflow;
+	running <= flag_running;
+	found <= flag_found;
 	
 	process (clk_slow)
 	-- because it looks prettier
@@ -151,83 +122,122 @@ begin
 				min_weight_magnitude <= (others => '0');
 				flag_start <= '0';
 				spi_data_tx <= (others => '0');
---				curl_mid_state_low <= (others => (others => '0'));
---				curl_mid_state_high <= (others => (others => '0'));
 				addrptr := x"00";
 			else
 				flag_start <= '0';
+				flag_curl_reset <= '0';
+				flag_curl_write <= '0';
+				flag_curl_do_curl <= '0';
+				spi_data_strobe <= '0';
+				
 -- new spi data received
 				if spi_data_rxen = '1' then
 					spi_cmd := spi_data_rx(31 downto 26);
 					case spi_cmd is
 						when "000000" => -- nop (mainly for reading back data)
-						when "100001" => -- start / stop
+						when "100000" => -- start / stop
 							flag_start <= spi_data_rx(0);
-						when "100101" =>	-- write to wr address
-							addrptr := unsigned(spi_data_rx(7 downto 0));
-						when "100010" =>	-- write to mid state
-							if (addrptr <= (STATE_LENGTH/9)-1) then
-								curl_mid_state_low(to_integer(addrptr)) <= spi_data_rx(DATA_WIDTH-1 downto 0);
-								curl_mid_state_high(to_integer(addrptr)) <= spi_data_rx(DATA_WIDTH+8 downto DATA_WIDTH);
+							flag_curl_reset <= spi_data_rx(1);
+							flag_curl_write <= spi_data_rx(2);
+							flag_curl_do_curl <= spi_data_rx(3);
+						when "010000" =>	-- write to wr address
+							addrptr := (others => '0'); --unsigned(spi_data_rx(7 downto 0));
+						when "001000" =>	-- write to data buffer
+							if (addrptr <= (HASH_LENGTH/DATA_WIDTH)-1) then
+								data_low(to_integer(addrptr)) <= spi_data_rx(DATA_WIDTH-1 downto 0);
+								data_high(to_integer(addrptr)) <= spi_data_rx(DATA_WIDTH+8 downto DATA_WIDTH);
 							end if;
-							spi_data_tx <= spi_data_rx;
 							addrptr := addrptr + 1;
-						when "100100" =>
+						when "000100" =>
 							min_weight_magnitude <= spi_data_rx(BITS_MIN_WEIGHT_MAGINUTE_MAX-1 downto 0);
-
-						when "000001" =>	-- read flags
-							spi_data_tx(2 downto 0) <= sync_flag_overflow(2) & sync_flag_found(2) & sync_flag_running(2);
-
--- for debugging onle ... read back curl_state
---						when "000010" =>
---							spi_addr := spi_data_rx(25 downto 16);
---							spi_data_tx(0+PARALLEL-1 downto 0) <= curl_state_low(to_integer(unsigned(spi_addr)));
---							spi_data_tx(8+PARALLEL-1 downto 8) <= curl_state_high(to_integer(unsigned(spi_addr)));
-
--- for debugging only ... read back mid_state
---						when "000111" =>
---							if (addrptr <= (STATE_LENGTH/9)-1) then
---								spi_data_tx(DATA_WIDTH-1 downto 0) <= curl_mid_state_low(to_integer(addrptr));
---								spi_data_tx(DATA_WIDTH+8 downto DATA_WIDTH) <= curl_mid_state_high(to_integer(addrptr));
---							else
---								spi_data_tx <= (others => '0');
---							end if;
---							addrptr := addrptr + 1;	-- dual-used for debugging purposes 
-						when "000011" => -- read nonce
-							spi_data_tx(INTERN_NONCE_LENGTH-1 downto 0) <= std_logic_vector(sync_binary_nonce(2));
-						when "000100" => -- read mask
-							spi_data_tx(PARALLEL-1 downto 0) <= sync_mask(2);
-						when "010101" => -- loop back read test inverted bits
-							spi_data_tx <= not spi_data_rx;
-						when "000110" => -- read back parallel-level
-							spi_data_tx(3 downto 0) <= std_logic_vector(to_unsigned(PARALLEL, 4));
+						when "000010" =>	-- read flags
+							spi_data_tx(3 downto 0) <= flag_curl_finished & flag_overflow & flag_found & flag_running;
+							spi_data_tx(7 downto 4) <= std_logic_vector(to_unsigned(PARALLEL, 4));
+							spi_data_tx(8+(PARALLEL-1) downto 8) <= mask;
+							spi_data_strobe <= '1';
+						when "000001" => -- read nonce
+							spi_data_tx(INTERN_NONCE_LENGTH-1 downto 0) <= std_logic_vector(binary_nonce);
+							spi_data_strobe <= '1';
 						when others =>
-							spi_data_tx <= (others => '1');
-					end case; 			
+					end case; 
 				end if;
 			end if; 
 		end if;
 	end process;
 	
+	process (clk_slow)
+		variable	state : integer range 0 to 7 := 0;
+		variable round : integer range 0 to 127 := 0;
+		variable tmp_index : integer range 0 to 1023;
+		
+		variable alpha : std_logic_vector(STATE_LENGTH-1 downto 0);
+		variable beta : std_logic_vector(STATE_LENGTH-1 downto 0);
+		variable gamma : std_logic_vector(STATE_LENGTH-1 downto 0);
+		variable delta : std_logic_vector(STATE_LENGTH-1 downto 0);
+		
+	begin
+		if rising_edge(clk_slow) then
+			if reset='1' then
+				state := 0;
+			else
+				case state is
+					when 0 =>
+						round := NUMBER_OF_ROUNDS;
+						flag_curl_finished <= '1';
 
+						if flag_curl_write = '1' then 
+							for I in 0 to (HASH_LENGTH/DATA_WIDTH)-1 loop
+								for J in 0 to DATA_WIDTH-1 loop
+									tmp_index := I*DATA_WIDTH+J;
+									curl_mid_state_low(tmp_index) <= data_low(I)(J);
+									curl_mid_state_high(tmp_index) <= data_high(I)(J);
+								end loop;
+							end loop;
+						elsif flag_curl_reset='1' then
+							curl_mid_state_low <= (others => '1');
+							curl_mid_state_high <= (others => '1');
+						end if;
+
+						if flag_curl_do_curl = '1' then
+							round := NUMBER_OF_ROUNDS;
+							flag_curl_finished <= '0';
+							state := 1;
+						end if;
+					when 1 =>	-- do the curl hash round without any copying needed
+						if round = 1 then
+							state := 0;
+						end if;
+						for I in 0 to STATE_LENGTH-1 loop
+							alpha(I) := curl_mid_state_low(index_table(I));
+							beta(I) := curl_mid_state_high(index_table(I));
+							gamma(I) := curl_mid_state_high(index_table(I+1));
+							
+							delta(I) := (alpha(I) or (not gamma(I))) and (curl_mid_state_low(index_table(I+1)) xor beta(I));
+
+							curl_mid_state_low(I) <= not delta(I);
+							curl_mid_state_high(I) <= (alpha(I) xor gamma(I)) or delta(I);
+						end loop;
+						round := round - 1;
+					when others =>
+						state := 0;
+				end case;
+			end if;
+		end if;
+	end process;
 	
 	process (clk)
 		variable	state : integer range 0 to 63 := 0;
 		variable round : integer range 0 to 127 := 0;
 
-		variable imask : state_vector_type;
 		
 		variable i_min_weight_magnitude : min_weight_magnitude_type;
-		variable tmp_weight_magnitude : min_weight_magnitude_array(0 to PARALLEL-1);
-		variable i_binary_nonce : unsigned(INTERN_NONCE_LENGTH-1 downto 0);	
 
 		-- temporary registers get optimized away
 		variable alpha : curl_state_array(STATE_LENGTH-1 downto 0);
 		variable beta : curl_state_array(STATE_LENGTH-1 downto 0);
 		variable gamma : curl_state_array(STATE_LENGTH-1 downto 0);
 		variable delta : curl_state_array(STATE_LENGTH-1 downto 0);
-		
-		variable tmp_index : integer range 0 to 1023;
+
 		variable tmp_highest_bit : integer range 0 to 31;
 	begin
 		if rising_edge(clk) then
@@ -242,38 +252,59 @@ begin
 --				curl_state_low <= (others => (others => '0'));
 --				curl_state_high <= (others => (others => '0'));
 --				tmp_weight_magnitude := (others => (others => '0'));
-				i_binary_nonce := (others => '0');
-				imask := (others => '0');
-				i_min_weight_magnitude := (others => '0');
-				alpha := (others => (others => '0'));
-				beta := (others => (others => '0'));
-				gamma := (others => (others => '0'));
-				delta := (others => (others => '0'));
-				tmp_index := 0;
+				i_binary_nonce <= (others => '0');
+				imask <= (others => '0');
+--				i_min_weight_magnitude := (others => '0');
+--				alpha := (others => (others => '0'));
+--				beta := (others => (others => '0'));
+--				gamma := (others => (others => '0'));
+--				delta := (others => (others => '0'));
+--				tmp_index := 0;
+				tmp_weight_magnitude <= (others => (others => '0'));
 			else
 				case state is
 					when 0 =>
 						flag_running <= '0';
-						if sync_flag_start(2) = '1' then
-							i_binary_nonce := x"00000000";
-							i_min_weight_magnitude := min_weight_magnitude;
-							flag_found <= '0';
-							flag_running <= '1';
-							flag_overflow <= '0';
-							state := 8;
+					when others =>
+						flag_running <= '1';
+				end case;
+				
+				case state is
+					when 0 =>
+--						flag_running <= '0';
+						if flag_start = '1' then
+							i_binary_nonce <= x"00000000";
+--							flag_running <= '1';
+							state := 1;
 						end if;
-					when 8 =>	-- copy mid state and insert nonce
 						
-						-- copy and fully expand mid-state to curl-state
-						for I in 0 to (STATE_LENGTH/DATA_WIDTH)-1 loop
-							for J in 0 to DATA_WIDTH-1 loop
-								tmp_index := I*DATA_WIDTH+J;
-								if  tmp_index < NONCE_OFFSET or tmp_index > NONCE_OFFSET + NONCE_LENGTH - 1 then
-									curl_state_low(tmp_index) <= expand(curl_mid_state_low(I)(J));
-									curl_state_high(tmp_index) <= expand(curl_mid_state_high(I)(J));
-								end if;
-							end loop;
+					-- do PoW
+					when 1 =>	-- copy mid state and insert nonce
+						i_min_weight_magnitude := min_weight_magnitude;
+						flag_found <= '0';
+						flag_overflow <= '0';
+						binary_nonce <= i_binary_nonce;						
+						-- pipelining
+						i_binary_nonce <= i_binary_nonce + 1;
+
+--						-- copy and fully expand mid-state to curl-state
+						for I in 0 to STATE_LENGTH-1 loop
+							if  I < NONCE_OFFSET or I > NONCE_OFFSET + NONCE_LENGTH - 1 then
+								curl_state_low(I) <= expand(curl_mid_state_low(I));
+								curl_state_high(I) <= expand(curl_mid_state_high(I));
+							end if;
 						end loop;
+
+--						for I in 0 to NONCE_OFFSET-1 loop
+--							curl_state_low(I) <= expand(curl_mid_state_low(I));
+--							curl_state_high(I) <= expand(curl_mid_state_high(I));
+--						end loop;
+--
+--						for I in NONCE_OFFSET + NONCE_LENGTH to STATE_LENGTH-1 loop
+--							curl_state_low(I) <= expand(curl_mid_state_low(I));
+--							curl_state_high(I) <= expand(curl_mid_state_high(I));
+--						end loop;						
+						
    
 						-- fill all ... synthesizer is smart enough to optimize away what is not needed
 						for I in NONCE_OFFSET to NONCE_OFFSET + NONCE_LENGTH - 1 loop
@@ -312,11 +343,15 @@ begin
 
 						-- initialize round-counter
 						round := NUMBER_OF_ROUNDS;
-						
-						state := 10;
-					when 10 =>	-- do the curl hash round without any copying needed
+						if i_binary_nonce = x"ffffffff" then
+							flag_overflow <= '1';
+							state := 0;
+						else
+							state := 2;
+						end if;
+					when 2 =>	-- do the curl hash round without any copying needed
 						if round = 1 then
-							state := 16;
+							state := 3;
 						end if;
 						for I in 0 to STATE_LENGTH-1 loop
 							alpha(I) := curl_state_low(index_table(I));
@@ -329,43 +364,32 @@ begin
 							curl_state_high(I) <= (alpha(I) xor gamma(I)) or delta(I);
 						end loop;
 						round := round - 1;
-					when 16 =>  -- find out which solution - if any
-						imask := (others => '0');
+					when 3 =>  -- find out which solution - if any
 	
 						-- transform "vertical" trits to "horizontal" bits
 						-- and compare with min weight magnitude mask
 						for I in 0 to PARALLEL-1 loop
-							tmp_weight_magnitude(I) := (others => '0');
 							for J in 0 to BITS_MIN_WEIGHT_MAGINUTE_MAX-1 loop
-								tmp_weight_magnitude(I)(J) := curl_state_low(HASH_LENGTH - 1 - J)(I) and curl_state_high(HASH_LENGTH - 1 - J)(I);
+								tmp_weight_magnitude(I)(J) <= curl_state_low(HASH_LENGTH - 1 - J)(I) and curl_state_high(HASH_LENGTH - 1 - J)(I) and i_min_weight_magnitude(J);
 							end loop;
-							tmp_weight_magnitude(I) := tmp_weight_magnitude(I) and i_min_weight_magnitude; -- only consider used bits
+						end loop;
+
+						-- pipelining
+						imask <= (others => '0');
+						for I in 0 to PARALLEL-1 loop
 							if tmp_weight_magnitude(I) = i_min_weight_magnitude then
-								imask(I) := '1';
+								imask(I) <= '1';
 							end if;
 						end loop;
-						state := 17;
-					when 17 =>
-						if unsigned(imask) /= 0 then
-							state := 30;
-						elsif i_binary_nonce = x"ffffffff" then
-							state := 31;
+						
+						-- pipelining
+						if unsigned(imask) = 0 then
+							state :=1;
 						else
-							i_binary_nonce := i_binary_nonce + 1;
-							state := 8;
+							flag_found <= '1';
+							mask <= imask;
+							state :=0;
 						end if;
-					when 30 =>
-						state := 32;
-					when 32 =>
-						state := 33;
-					when 33 =>
-						mask <= imask;
-						binary_nonce <= i_binary_nonce;
-						flag_found <= '1';
-						state := 0;
-					when 31 =>
-						flag_overflow <= '1';
-						state := 0;
 					when others =>
 						state := 0;
 				end case;

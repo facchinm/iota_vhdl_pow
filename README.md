@@ -23,4 +23,6 @@ If you think, the project is worth supporting, please consider to leave me a don
 
 LLEYMHRKXWSPMGCMZFPKKTHSEMYJTNAZXSAYZGQUEXLXEEWPXUNWBFDWESOJVLHQHXOPQEYXGIRBYTLRWHMJAOSHUY
 
+Discord: pmaxuw#8292
+
 Thank you very much :)

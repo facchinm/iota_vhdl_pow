@@ -17,8 +17,6 @@ Please have a look on the project website:
 http://microengineer.eu/2018/04/25/iota-pearl-diver-fpga/
 
 
-All hardware and software will become open-source.
-
 If you think, the project is worth supporting, please consider to leave me a donation at:
 
 LLEYMHRKXWSPMGCMZFPKKTHSEMYJTNAZXSAYZGQUEXLXEEWPXUNWBFDWESOJVLHQHXOPQEYXGIRBYTLRWHMJAOSHUY
@@ -26,3 +24,8 @@ LLEYMHRKXWSPMGCMZFPKKTHSEMYJTNAZXSAYZGQUEXLXEEWPXUNWBFDWESOJVLHQHXOPQEYXGIRBYTLR
 Discord: pmaxuw#8292
 
 Thank you very much :)
+
+
+# License
+
+This project is licensed under the MIT-License (https://opensource.org/licenses/MIT)

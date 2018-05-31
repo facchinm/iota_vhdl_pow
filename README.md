@@ -26,4 +26,6 @@ Discord: pmaxuw#8292
 Thank you very much :)
 
 
-# License: MIT-License (https://opensource.org/licenses/MIT)
+# License
+
+This project is licensed under the MIT-License (https://opensource.org/licenses/MIT)

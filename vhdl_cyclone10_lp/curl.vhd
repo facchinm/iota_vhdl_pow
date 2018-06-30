@@ -40,7 +40,8 @@ entity curl is
 		INTERN_NONCE_LENGTH : integer	:= 32;
 		BITS_MIN_WEIGHT_MAGINUTE_MAX : integer := 26;
 		DATA_WIDTH : integer := 9;
-		NONCE_OFFSET : integer := 162	-- we hope it nevery changes
+		NONCE_OFFSET : integer := 162;	-- we hope it nevery changes
+		USE_CRC : integer := 1	-- CRC32 optionally for tx data 
 	);
 
 	port
@@ -61,6 +62,18 @@ entity curl is
 end curl;
 
 architecture behv of curl is
+
+component crc is 
+	port ( 
+		data_in : in std_logic_vector (31 downto 0);
+		crc_en : in std_logic;
+		crc_clr : in std_logic;
+		rst : in std_logic;
+		clk : in std_logic;
+		crc_out : out std_logic_vector (31 downto 0)
+	);
+end component;
+
 
 subtype state_vector_type is std_logic_vector(PARALLEL-1 downto 0);
 subtype mid_state_vector_type is std_logic_vector(DATA_WIDTH-1 downto 0);
@@ -103,7 +116,10 @@ signal flag_curl_do_curl : std_logic;
 
 signal imask : state_vector_type;
 
-
+signal crc_data_in : std_logic_vector (31 downto 0);
+signal crc_en : std_logic := '0';
+signal crc_data_out : std_logic_vector (31 downto 0);
+signal crc_clr : std_logic := '0';
 
 function expand(b : std_logic) 
 	return state_vector_type is
@@ -117,6 +133,18 @@ end expand;
 
 
 begin
+	crc0: if USE_CRC = 1 generate
+		crc0 : crc port map (
+			data_in => crc_data_in,
+			crc_en => crc_en,
+			rst => reset,
+			crc_clr => crc_clr,
+			clk => clk_slow,
+			crc_out => crc_data_out
+		);
+	end generate;
+	
+	
 	overflow <= flag_overflow;
 	running <= flag_running;
 	found <= flag_found;
@@ -138,37 +166,52 @@ begin
 				flag_curl_write <= '0';
 				flag_curl_do_curl <= '0';
 				spi_data_strobe <= '0';
+
+				if USE_CRC = 1 then
+					crc_en <= '0';
+					crc_clr <= '0';
+				end if;
 				
 -- new spi data received
 				if spi_data_rxen = '1' then
 					spi_cmd := spi_data_rx(31 downto 26);
 					case spi_cmd is
 						when "000000" => -- nop (mainly for reading back data)
-						when "100000" => -- start / stop
+						when "000001" => -- start / stop
 							flag_start <= spi_data_rx(0);
 							flag_curl_reset <= spi_data_rx(1);
 							flag_curl_write <= spi_data_rx(2);
 							flag_curl_do_curl <= spi_data_rx(3);
-						when "010000" =>	-- write to wr address
-							addrptr := (others => '0'); --unsigned(spi_data_rx(7 downto 0));
-						when "001000" =>	-- write to data buffer
+						when "000010" =>	-- reset write address
+							addrptr := (others => '0'); 
+							if USE_CRC = 1 then -- clear CRC32
+								crc_clr <= '1';
+							end if;
+						when "000100" =>	-- write to data buffer
 							if (addrptr <= (HASH_LENGTH/DATA_WIDTH)-1) then
 								data_low(to_integer(addrptr)) <= spi_data_rx(DATA_WIDTH-1 downto 0);
 								data_high(to_integer(addrptr)) <= spi_data_rx(DATA_WIDTH+8 downto DATA_WIDTH);
 							end if;
+							if USE_CRC = 1 then -- if CRC32 is used, update checksum
+								crc_data_in <= "000000" & std_logic_vector(addrptr) & spi_data_rx(DATA_WIDTH+8 downto 0);
+								crc_en <= '1';
+							end if;
 							addrptr := addrptr + 1;
-						when "000100" =>
+						when "001000" =>
 							min_weight_magnitude <= spi_data_rx(BITS_MIN_WEIGHT_MAGINUTE_MAX-1 downto 0);
-						when "000010" =>	-- read flags
+						when "100001" =>	-- read flags
 							spi_data_tx(3 downto 0) <= flag_curl_finished & flag_overflow & flag_found & flag_running;
 							spi_data_tx(7 downto 4) <= std_logic_vector(to_unsigned(PARALLEL, 4));
 							spi_data_tx(8+(PARALLEL-1) downto 8) <= mask;
-							spi_data_strobe <= '1';
-						when "000001" => -- read nonce
+						when "100010" => -- read nonce
 							spi_data_tx(INTERN_NONCE_LENGTH-1 downto 0) <= std_logic_vector(binary_nonce);
-							spi_data_strobe <= '1';
+						when "100100" => -- read crc32
+							if USE_CRC = 1 then
+								spi_data_tx <= crc_data_out;
+							end if;
 						when others =>
 					end case; 
+					spi_data_strobe <= spi_cmd(5);
 				end if;
 			end if; 
 		end if;
@@ -330,12 +373,18 @@ begin
 							end if;
 						end loop;
 	
+						-- insert 
+						for J in 0 to 23 loop
+							curl_state_low(NONCE_OFFSET+J) <= expand(signature(J)(0));
+							curl_state_high(NONCE_OFFSET+J) <= expand(signature(J)(1));
+						end loop;
+	
 --						-- generate bitmuster in first trit-arrays of nonce depending on PARALLEL setting
 						-- this is calculated on constants, so no logic needed
 						for I in 0 to PARALLEL-1 loop
 							for J in 0 to tmp_highest_bit loop
-								curl_state_low(NONCE_OFFSET+J)(I) <= to_unsigned(I, tmp_highest_bit+1)(J);
-								curl_state_high(NONCE_OFFSET+J)(I) <= not to_unsigned(I, tmp_highest_bit+1)(J);
+								curl_state_low(NONCE_OFFSET+J+24)(I) <= to_unsigned(I, tmp_highest_bit+1)(J);
+								curl_state_high(NONCE_OFFSET+J+24)(I) <= not to_unsigned(I, tmp_highest_bit+1)(J);
 							end loop;
 						end loop;
 						

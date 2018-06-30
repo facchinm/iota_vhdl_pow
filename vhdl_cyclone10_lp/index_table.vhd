@@ -29,6 +29,41 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 package index_table is
+
+type const_signature_table is array ( 0 to 23) of std_logic_vector(1 downto 0);
+constant signature : const_signature_table := (
+	0 => "10",
+	1 => "01",
+	2 => "01",
+	
+	3 => "11",
+	4 => "11",
+	5 => "10",
+	
+	6 => "10",
+	7 => "10",
+	8 => "11",
+	
+	9 => "11",
+	10 => "11",
+	11 => "10",
+	
+	12 => "10",
+	13 => "10",
+	14 => "01",
+	
+	15 => "01",
+	16 => "01",
+	17 => "10",
+	
+	18 => "11",
+	19 => "11",
+	20 => "01",
+	
+	21 => "11",
+	22 => "11",
+	23 => "11"
+);	
 	
 type const_index_table is array ( 0 to 729) of integer range 0 to 728;
   constant index_table : const_index_table := (

@@ -32,6 +32,8 @@ use work.index_table.all;
 entity curl is
 	generic
 	(
+		VERSION_MAJOR : integer := 1;
+		VERSION_MINOR : integer := 1;
 		HASH_LENGTH : integer := 243;
 		STATE_LENGTH : integer := 729; -- 3 * HASH_LENGTH;
 		NONCE_LENGTH : integer := 81; -- HASH_LENGTH / 3;
@@ -203,6 +205,8 @@ begin
 							spi_data_tx(3 downto 0) <= flag_curl_finished & flag_overflow & flag_found & flag_running;
 							spi_data_tx(7 downto 4) <= std_logic_vector(to_unsigned(PARALLEL, 4));
 							spi_data_tx(8+(PARALLEL-1) downto 8) <= mask;
+							spi_data_tx(31 downto 28) <= std_logic_vector(to_unsigned(VERSION_MAJOR, 4));
+							spi_data_tx(27 downto 24) <= std_logic_vector(to_unsigned(VERSION_MINOR, 4));
 						when "100010" => -- read nonce
 							spi_data_tx(INTERN_NONCE_LENGTH-1 downto 0) <= std_logic_vector(binary_nonce);
 						when "100100" => -- read crc32

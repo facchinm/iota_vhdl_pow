@@ -90,14 +90,20 @@ begin
 					when "10" =>
 						miso <= i_shiftregister(31);
 					when "01" =>
-						cnt := 0;
-						iwren := '1';
-						data_wr <= i_shiftregister;
+--						cnt := 0;
+--						iwren := '1';
+--						data_wr <= i_shiftregister;
 					when "00" =>
 						case sync_sck is
 							when "01" => 
 								i_shiftregister := i_shiftregister(30 downto 0) & mosi;
 								cnt := cnt + 1;
+								
+								if cnt = 32 then
+									cnt := 0;
+									iwren := '1';
+									data_wr <= i_shiftregister;
+								end if;
 							when "10" =>
 								miso <= i_shiftregister(31);
 							when others =>

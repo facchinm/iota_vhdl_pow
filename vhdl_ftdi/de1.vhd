@@ -29,12 +29,18 @@ use IEEE.STD_LOGIC_ARITH.ALL;
 use IEEE.STD_LOGIC_UNSIGNED.ALL;
 
 entity de1 is
+	generic(
+		counter_size  :  INTEGER := 17 --counter size (17 bits gives 10.9ms with 12MHz clock)
+		);
 	port (
 		clk12M : in std_logic;
-		reset : in std_logic;
+		--reset : in std_logic;
+		button : in std_logic;
 		led_running : out std_logic;
 		led_found : out std_logic;
 		led_overflow : out std_logic;
+		
+		UULEDS : out std_logic_vector(4 downto 0); -- Unused LEDs
 
 		bdbus0_sck : in std_logic;
 		bdbus1_mosi : in std_logic;
@@ -47,9 +53,18 @@ end;
 
 architecture beh of de1 is
 
+signal flipflops : std_logic_vector(1 downto 0); --input flip flops
+signal counter_set : std_logic; --sync reset to zero
+signal state : std_logic := '1';
+signal ledstate : std_logic := '0';
+signal lastButtonState : std_logic := '0';
+signal counter_out : std_logic_vector(counter_size downto 0) := (others => '0'); --counter output
+
+signal led_running_state : STD_LOGIC;
+signal led_overflow_state : STD_LOGIC;
+signal led_found_state : STD_LOGIC;
+
 signal nreset : std_logic;
-
-
 
 signal pll_clk : std_logic;
 signal pll_reset : std_logic := '0';
@@ -111,9 +126,11 @@ component curl
 end component;
 
 begin
-	nreset <= not reset;
+	nreset <= '0';--not reset
 	bdbus4 <= 'Z';
 	bdbus5 <= 'Z';
+	
+	counter_set <= flipflops(0) xor flipflops(1); --determine when to start/reset counter
 	
 
 	pll0 : pll port map (
@@ -150,10 +167,47 @@ begin
 		spi_data_rxen => spi_data_rx_en,
 		spi_data_strobe => spi_data_strobe,
 		
-		overflow => led_overflow,
-		running => led_running,
-		found => led_found
+		overflow => led_overflow_state,
+		running => led_running_state,
+		found => led_found_state
 	);
+	
+	--Debounce button
+	PROCESS(clk12M)
+	BEGIN
+		IF(clk12M'EVENT and clk12M = '1') THEN
+			flipflops(0) <= NOT button;
+			flipflops(1) <= flipflops(0);
+			IF(counter_set = '1') THEN                  --reset counter because input is changing
+				counter_out <= (OTHERS => '0');
+			ELSIF(counter_out(counter_size) = '0') THEN --stable input time is not yet met
+				counter_out <= counter_out + 1;
+			ELSE                                        --stable input time is met
+				state <= flipflops(1);
+			END IF;    
+		END IF;
+		
+	END PROCESS;
+	
+	--Control LEDs
+	PROCESS(clk12M)
+	BEGIN
+		IF(rising_edge(clk12M)) THEN
+			IF(state = '1' and lastButtonState = '0') THEN     --active-high
+				ledstate <= not ledstate;								--button pressed -> toggle led
+			END IF;
+			lastButtonState <= state;
+			IF(ledstate = '1') THEN
+				led_found <= led_found_state;
+				led_running <= led_running_state;
+				led_overflow <= led_overflow_state;
+			ELSE
+				led_found <= '0';
+				led_running <= '0';
+				led_overflow <= '0';
+			END IF;
+		END IF;
+	END PROCESS;
 	
 
 end architecture;

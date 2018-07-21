@@ -41,14 +41,13 @@ set_global_assignment -name DEVICE 10CL025YU256C8G
 set_global_assignment -name TOP_LEVEL_ENTITY de1
 set_global_assignment -name ORIGINAL_QUARTUS_VERSION 17.1.0
 set_global_assignment -name PROJECT_CREATION_TIME_DATE "10:09:41  APRIL 23, 2018"
-set_global_assignment -name LAST_QUARTUS_VERSION "17.1.0 Lite Edition"
+set_global_assignment -name LAST_QUARTUS_VERSION "18.0.0 Lite Edition"
 set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
 set_global_assignment -name MIN_CORE_JUNCTION_TEMP 0
 set_global_assignment -name MAX_CORE_JUNCTION_TEMP 85
 set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 1
 set_global_assignment -name POWER_PRESET_COOLING_SOLUTION "23 MM HEAT SINK WITH 200 LFPM AIRFLOW"
 set_global_assignment -name POWER_BOARD_THERMAL_MODEL "NONE (CONSERVATIVE)"
-set_location_assignment PIN_N6 -to reset
 set_global_assignment -name ENABLE_OCT_DONE OFF
 set_global_assignment -name CYCLONEIII_CONFIGURATION_SCHEME "ACTIVE SERIAL"
 set_global_assignment -name STRATIXV_CONFIGURATION_SCHEME "PASSIVE SERIAL"
@@ -96,13 +95,6 @@ set_global_assignment -name ALLOW_REGISTER_DUPLICATION OFF
 set_global_assignment -name OPTIMIZE_POWER_DURING_FITTING OFF
 set_global_assignment -name ROUTER_EFFORT_MULTIPLIER 16.0
 set_global_assignment -name POWER_USE_INPUT_FILES ON
-set_global_assignment -name SDC_FILE "curl-cyclone10.sdc"
-set_global_assignment -name VHDL_FILE spi_slave.vhd
-set_global_assignment -name VHDL_FILE de1.vhd
-set_global_assignment -name VHDL_FILE index_table.vhd
-set_global_assignment -name VHDL_FILE curl.vhd
-set_global_assignment -name QIP_FILE pll.qip
-set_global_assignment -name VHDL_FILE crc.vhd
 set_location_assignment PIN_R7 -to bdbus0_sck
 set_location_assignment PIN_T7 -to bdbus1_mosi
 set_location_assignment PIN_R6 -to bdbus2_miso
@@ -117,4 +109,17 @@ set_global_assignment -name ENABLE_INIT_DONE_OUTPUT ON
 set_global_assignment -name ENABLE_CONFIGURATION_PINS OFF
 set_global_assignment -name ENABLE_BOOT_SEL_PIN OFF
 
+set_global_assignment -name SDC_FILE "curl-cyclone10.sdc"
+set_global_assignment -name VHDL_FILE spi_slave.vhd
+set_global_assignment -name VHDL_FILE de1.vhd
+set_global_assignment -name VHDL_FILE index_table.vhd
+set_global_assignment -name VHDL_FILE curl.vhd
+set_global_assignment -name QIP_FILE pll.qip
+set_global_assignment -name VHDL_FILE crc.vhd
+set_location_assignment PIN_N6 -to button
+set_location_assignment PIN_N3 -to UULEDS[0]
+set_location_assignment PIN_N5 -to UULEDS[1]
+set_location_assignment PIN_R4 -to UULEDS[2]
+set_location_assignment PIN_T2 -to UULEDS[3]
+set_location_assignment PIN_R3 -to UULEDS[4]
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

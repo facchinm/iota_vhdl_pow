@@ -37,22 +37,22 @@
 
 
 set_global_assignment -name FAMILY "Cyclone 10 LP"
-set_global_assignment -name DEVICE 10CL025YE144I7G
+set_global_assignment -name DEVICE 10CL016YU256C8G
 set_global_assignment -name TOP_LEVEL_ENTITY de1
 set_global_assignment -name ORIGINAL_QUARTUS_VERSION 17.1.0
 set_global_assignment -name PROJECT_CREATION_TIME_DATE "10:09:41  APRIL 23, 2018"
 set_global_assignment -name LAST_QUARTUS_VERSION "17.1.0 Lite Edition"
 set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
-set_global_assignment -name MIN_CORE_JUNCTION_TEMP "-40"
-set_global_assignment -name MAX_CORE_JUNCTION_TEMP 100
+set_global_assignment -name MIN_CORE_JUNCTION_TEMP 0
+set_global_assignment -name MAX_CORE_JUNCTION_TEMP 85
 set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 2
 set_global_assignment -name POWER_PRESET_COOLING_SOLUTION "23 MM HEAT SINK WITH 200 LFPM AIRFLOW"
 set_global_assignment -name POWER_BOARD_THERMAL_MODEL "NONE (CONSERVATIVE)"
-set_location_assignment PIN_52 -to CLOCK_50
-set_location_assignment PIN_72 -to reset
-set_location_assignment PIN_68 -to led_running
-set_location_assignment PIN_66 -to led_overflow
-set_location_assignment PIN_67 -to led_found
+set_location_assignment PIN_E2 -to CLOCK_50
+set_location_assignment PIN_T3 -to reset
+set_location_assignment PIN_G16 -to led_running
+set_location_assignment PIN_G15 -to led_overflow
+set_location_assignment PIN_L16 -to led_found
 set_global_assignment -name ENABLE_OCT_DONE OFF
 set_global_assignment -name CYCLONEIII_CONFIGURATION_SCHEME "PASSIVE SERIAL"
 set_global_assignment -name STRATIXV_CONFIGURATION_SCHEME "PASSIVE SERIAL"
@@ -66,8 +66,6 @@ set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVCMOS"
 set_global_assignment -name CYCLONEII_RESERVE_NCEO_AFTER_CONFIGURATION "USE AS REGULAR IO"
 set_global_assignment -name RESERVE_DATA1_AFTER_CONFIGURATION "USE AS REGULAR IO"
 set_global_assignment -name RESERVE_FLASH_NCE_AFTER_CONFIGURATION "USE AS REGULAR IO"
-set_location_assignment PIN_12 -to ~ALTERA_DCLK~
-set_location_assignment PIN_13 -to ~ALTERA_DATA0~
 set_global_assignment -name AUTO_SHIFT_REGISTER_RECOGNITION AUTO
 set_global_assignment -name ALLOW_ANY_ROM_SIZE_FOR_RECOGNITION ON
 set_global_assignment -name ALLOW_ANY_RAM_SIZE_FOR_RECOGNITION ON
@@ -102,14 +100,10 @@ set_global_assignment -name ALLOW_REGISTER_DUPLICATION OFF
 set_global_assignment -name OPTIMIZE_POWER_DURING_FITTING OFF
 set_global_assignment -name ROUTER_EFFORT_MULTIPLIER 16.0
 set_global_assignment -name POWER_USE_INPUT_FILES ON
-set_location_assignment PIN_100 -to spi1_miso
-set_location_assignment PIN_99 -to spi1_mosi
-set_location_assignment PIN_98 -to spi1_sck
-set_location_assignment PIN_101 -to spi1_ss
-set_location_assignment PIN_76 -to spi2_miso
-set_location_assignment PIN_77 -to spi2_mosi
-set_location_assignment PIN_85 -to spi2_sck
-set_location_assignment PIN_83 -to spi2_ss
+set_location_assignment PIN_C16 -to spi1_miso
+set_location_assignment PIN_F16 -to spi1_mosi
+set_location_assignment PIN_F15 -to spi1_sck
+set_location_assignment PIN_T2 -to spi1_ss
 set_global_assignment -name VHDL_FILE crc.vhd
 set_global_assignment -name SDC_FILE "curl-cyclone10.sdc"
 set_global_assignment -name VHDL_FILE spi_slave.vhd

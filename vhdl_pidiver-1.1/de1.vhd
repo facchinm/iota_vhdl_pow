@@ -39,13 +39,7 @@ entity de1 is
 		spi1_mosi : in std_logic;
 		spi1_sck : in std_logic;
 		spi1_ss : in std_logic;
-		spi1_miso : out std_logic;
-
-		spi2_mosi : in std_logic;
-		spi2_sck : in std_logic;
-		spi2_ss : in std_logic;
-		spi2_miso : out std_logic
-		
+		spi1_miso : out std_logic
 	);
 end;
 
@@ -64,18 +58,12 @@ signal spi1_data_rx  : std_logic_vector(31 downto 0);
 signal spi1_data_rx_en : std_logic;
 signal spi1_data_strobe : std_logic;
 
-signal spi2_data_tx : std_logic_vector(31 downto 0);
-signal spi2_data_rx  : std_logic_vector(31 downto 0);
-signal spi2_data_rx_en : std_logic;
-signal spi2_data_strobe : std_logic;
-
 signal spi_data_tx : std_logic_vector(31 downto 0);
 signal spi_data_rx  : std_logic_vector(31 downto 0);
 signal spi_data_rx_en : std_logic;
 signal spi_data_strobe : std_logic;
 		
 signal spi1_data_hold : std_logic := '0';
-signal spi2_data_hold : std_logic := '0';
 
 signal pll_slow : std_logic;
 
@@ -155,21 +143,6 @@ begin
 		data_wren => spi1_data_rx_en
 	);
 	
-	spi2 : spi_slave port map (
-		clk => pll_slow,
-		reset => nreset,
-		
-		mosi => spi2_mosi,
-		miso => spi2_miso,
-		sck => spi2_sck,
-		ss => spi2_ss,
-		data_strobe => spi2_data_strobe,
-		
-		data_rd => spi2_data_tx,
-		data_wr => spi2_data_rx,
-		data_wren => spi2_data_rx_en
-	);	
-	
 	curl0 : curl port map (
 		clk => pll_clk,
 		reset => nreset,
@@ -189,9 +162,7 @@ begin
 	process(pll_slow)
 		variable state : integer range 0 to 15 := 0;
 		variable rxen1 : std_logic := '0';
-		variable rxen2 : std_logic := '0';
 		variable rxdata1 : std_logic_vector(31 downto 0) := (others => '0');
-		variable rxdata2 : std_logic_vector(31 downto 0) := (others => '0');
 	begin
 		if rising_edge(pll_slow) then
 			if nreset='1' then
@@ -204,17 +175,11 @@ begin
 
 				spi_data_rx_en <= '0';
 				spi1_data_strobe <= '0';
-				spi2_data_strobe <= '0';
 				
 				-- save both independent
 				if spi1_data_rx_en = '1' then
 					rxen1 := '1';
 					rxdata1 := spi1_data_rx;
-				end if;
-				
-				if spi2_data_rx_en = '1' then
-					rxen2 := '1';
-					rxdata2 := spi2_data_rx;
 				end if;
 
 				case state is 
@@ -227,25 +192,11 @@ begin
 						if rxdata1(31) = '1' then	-- wait for data
 							state := 1;
 						end if;
-					elsif rxen2 = '1' then
-						rxen2 := '0';
-						spi_data_rx_en <= '1';
-						spi_data_rx <= rxdata2;
-						if rxdata2(31) = '1' then	-- wait for data
-							state := 5;
-						end if;
 					end if;					
 				when 1 =>	-- wait for data from command decoder
 					if spi_data_strobe = '1' then
 						spi1_data_tx <= spi_data_tx;
 						spi1_data_strobe <= '1';
-						state := 0;
-					end if;
-					
-				when 5 =>	-- wait for data from command decoder
-					if spi_data_strobe = '1' then
-						spi2_data_tx <= spi_data_tx;
-						spi2_data_strobe <= '1';
 						state := 0;
 					end if;
 				when others =>

@@ -38,7 +38,7 @@ entity curl is
 		STATE_LENGTH : integer := 729; -- 3 * HASH_LENGTH;
 		NONCE_LENGTH : integer := 81; -- HASH_LENGTH / 3;
 		NUMBER_OF_ROUNDS : integer := 81;
-		PARALLEL : integer := 7;
+		PARALLEL : integer := 4;
 		INTERN_NONCE_LENGTH : integer	:= 32;
 		BITS_MIN_WEIGHT_MAGINUTE_MAX : integer := 26;
 		DATA_WIDTH : integer := 9;
